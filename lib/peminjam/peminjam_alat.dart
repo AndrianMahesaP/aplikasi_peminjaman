@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'ajukan_peminjaman.dart';
+import 'pengaturan.dart';
 
 class PeminjamAlatPage extends StatefulWidget {
   const PeminjamAlatPage({super.key});
@@ -35,7 +36,22 @@ class _PeminjamAlatPageState extends State<PeminjamAlatPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Pilih Alat')),
+      appBar: AppBar(
+        title: const Text('Pilih Alat'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const PengaturanPeminjamPage(),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : ListView.builder(

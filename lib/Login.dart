@@ -22,33 +22,59 @@ class _LoginPageState extends State<LoginPage> {
 
   static const primaryBlue = Color(0xFF1E4ED8);
 
- Future<void> login() async {
-  final username = usernameController.text.trim();
-  final password = passwordController.text.trim();
-
-  if (username.isEmpty || password.isEmpty) {
+  void showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Username & password wajib diisi')),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade600,
+      ),
     );
-    return;
   }
 
-  setState(() => isLoading = true);
+  Future<void> login() async {
+    final username = usernameController.text.trim();
+    final password = passwordController.text.trim();
 
-  // ================= LOGIN AUTH (ADMIN & PEMINJAM) =================
-  try {
-    final auth = await supabase.auth.signInWithPassword(
-      email: username,
-      password: password,
-    );
+    // ===== VALIDASI =====
+    if (username.isEmpty || password.isEmpty) {
+      showError('Username / email dan password wajib diisi');
+      return;
+    }
 
-    final user = auth.user;
+    if (username.contains('@')) {
+      final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+      if (!emailRegex.hasMatch(username)) {
+        showError('Format email tidak valid');
+        return;
+      }
+    }
 
-    if (user != null) {
+    if (password.length < 3) {
+      showError('Password minimal 3 karakter');
+      return;
+    }
+
+    setState(() => isLoading = true);
+
+    // ===== LOGIN ADMIN & PEMINJAM =====
+    try {
+      final auth = await supabase.auth.signInWithPassword(
+        email: username,
+        password: password,
+      );
+
+      final user = auth.user;
+
+      if (user == null) {
+        showError('Akun tidak ditemukan');
+        setState(() => isLoading = false);
+        return;
+      }
+
       final data = await supabase
           .from('users')
           .select('role')
-          .eq('id', user.id) // 
+          .eq('id', user.id)
           .single();
 
       if (!mounted) return;
@@ -68,37 +94,39 @@ class _LoginPageState extends State<LoginPage> {
         );
         return;
       }
+    } on AuthException catch (e) {
+      if (e.message.toLowerCase().contains('invalid')) {
+        showError('Email atau password salah');
+      } else {
+        showError(e.message);
+      }
+    } catch (_) {
+      // lanjut cek petugas
     }
-  } catch (_) {
-    // lanjut cek petugas
+
+    // ===== LOGIN PETUGAS =====
+    try {
+      final petugas = await supabase
+          .from('petugas')
+          .select()
+          .eq('username', username)
+          .eq('password', password)
+          .single();
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HomePetugasPage(petugas: petugas),
+        ),
+      );
+    } catch (_) {
+      showError('Username atau password salah');
+    } finally {
+      setState(() => isLoading = false);
+    }
   }
-
-  // ================= LOGIN PETUGAS =================
-  try {
-    final petugas = await supabase
-        .from('petugas')
-        .select()
-        .eq('username', username)
-        .eq('password', password)
-        .single();
-
-    if (!mounted) return;
-
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => HomePetugasPage(petugas: petugas),
-      ),
-    );
-  } catch (_) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Username atau password salah')),
-    );
-  } finally {
-    setState(() => isLoading = false);
-  }
-}
-
 
   @override
   Widget build(BuildContext context) {
