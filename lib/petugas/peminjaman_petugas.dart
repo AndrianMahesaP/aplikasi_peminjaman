@@ -22,7 +22,6 @@ class _PeminjamanPetugasPageState extends State<PeminjamanPetugasPage> {
         .eq('status', 'menunggu')
         .order('tanggal_pinjam', ascending: false);
 
-    print(res);
 
     setState(() {
       peminjaman = List<Map<String, dynamic>>.from(res);

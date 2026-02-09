@@ -8,46 +8,117 @@ class StatusPeminjamanPage extends StatefulWidget {
   State<StatusPeminjamanPage> createState() => _StatusPeminjamanPageState();
 }
 
-class _StatusPeminjamanPageState extends State<StatusPeminjamanPage> {
+class _StatusPeminjamanPageState extends State<StatusPeminjamanPage>
+    with SingleTickerProviderStateMixin {
   final supabase = Supabase.instance.client;
-  List data = [];
+
+  List statusData = [];
+  List aktivitasData = [];
   bool loading = true;
+
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    fetchStatus();
+    _tabController = TabController(length: 2, vsync: this);
+    fetchData();
   }
 
-  Future<void> fetchStatus() async {
+  Future<void> fetchData() async {
     final user = supabase.auth.currentUser;
-    final result = await supabase
-        .from('peminjaman')
-        .select('*, alat(nama)')
-        .eq('user_id', user!.id)
-        .order('created_at', ascending: false);
+    if (user == null) return;
+
+    setState(() => loading = true);
+
+    // 🔹 STATUS = belum disetujui
+    final statusResult = await supabase
+    .from('peminjaman')
+    .select('peminjaman_id, status, alat(nama)')
+    .eq('user_id', user.id)
+    .neq('status', 'disetujui')
+    .order('created_at', ascending: false);
+
+
+    // 🔹 AKTIVITAS = sudah disetujui
+    final aktivitasResult = await supabase
+    .from('peminjaman')
+    .select('peminjaman_id, status, alat(nama)')
+    .eq('user_id', user.id)
+    .eq('status', 'disetujui')
+    .order('created_at', ascending: false);
+
+
 
     setState(() {
-      data = result;
+      statusData = statusResult;
+      aktivitasData = aktivitasResult;
       loading = false;
     });
+  }
+
+  Widget _buildList(List data, {bool isAktivitas = false}) {
+    if (data.isEmpty) {
+      return const Center(child: Text('Data kosong'));
+    }
+
+    return RefreshIndicator(
+      onRefresh: fetchData,
+      child: ListView.builder(
+        itemCount: data.length,
+        itemBuilder: (context, index) {
+          final item = data[index];
+          final namaAlat = item['alat']?['nama'] ?? '-';
+
+          return Card(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: ListTile(
+              title: Text(namaAlat),
+              subtitle: Text(
+                isAktivitas
+                    ? 'Status: Disetujui'
+                    : 'Status: ${item['status']}',
+              ),
+              trailing: Icon(
+                isAktivitas
+                    ? Icons.check_circle
+                    : Icons.hourglass_top,
+                color: isAktivitas ? Colors.green : Colors.orange,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Status Peminjaman')),
+      appBar: AppBar(
+        title: const Text('Peminjaman'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Status'),
+            Tab(text: 'Aktivitas'),
+          ],
+        ),
+      ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
-              itemCount: data.length,
-              itemBuilder: (context, index) {
-                final item = data[index];
-                return ListTile(
-                  title: Text(item['alat']['nama']),
-                  subtitle: Text('Status: ${item['status']}'),
-                );
-              },
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildList(statusData),
+                _buildList(aktivitasData, isAktivitas: true),
+              ],
             ),
     );
   }

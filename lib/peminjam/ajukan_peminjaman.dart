@@ -15,93 +15,182 @@ class _AjukanPeminjamanPageState extends State<AjukanPeminjamanPage> {
   DateTime? tglPinjam;
   DateTime? tglKembali;
   bool loading = false;
+  String? namaKategoriReal; // Untuk menyimpan nama kategori asli dari DB
+  int jumlahPinjam = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _ambilDataKategori();
+  }
+
+  // Fungsi untuk mengambil nama kategori berdasarkan kategori_id di tabel alat
+  Future<void> _ambilDataKategori() async {
+    try {
+      final res = await supabase
+          .from('alat')
+          .select('kategori(nama)')
+          .eq('alat_id', widget.alat['alat_id'])
+          .single();
+      
+      if (res['kategori'] != null) {
+        setState(() {
+          namaKategoriReal = res['kategori']['nama'].toString();
+        });
+      }
+    } catch (e) {
+      setState(() => namaKategoriReal = "Umum");
+    }
+  }
 
   Future<void> simpanPeminjaman() async {
-  final user = supabase.auth.currentUser;
-  if (user == null || tglPinjam == null || tglKembali == null) return;
+    final user = supabase.auth.currentUser;
+    if (user == null || tglPinjam == null || tglKembali == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lengkapi tanggal terlebih dahulu!')),
+      );
+      return;
+    }
 
-  setState(() => loading = true);
+    setState(() => loading = true);
 
-  try {
-    await supabase.from('peminjaman').insert({
-      'user_id': user.id,
-      'alat_id': widget.alat['alat_id'],
-      'tanggal_pinjam': DateFormat('yyyy-MM-dd').format(tglPinjam!),
-'tanggal_kembali': DateFormat('yyyy-MM-dd').format(tglKembali!),
+    try {
+      // 1. Cek stok terbaru
+      final resAlat = await supabase
+          .from('alat')
+          .select('stok')
+          .eq('alat_id', widget.alat['alat_id'])
+          .single();
 
-      'status': 'menunggu',
-    });
+      int stokTersedia = resAlat['stok'] ?? 0;
+      if (stokTersedia < jumlahPinjam) throw 'Stok tidak mencukupi!';
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Peminjaman berhasil diajukan')),
-    );
-    Navigator.pop(context);
+      // 2. Insert Peminjaman
+      final peminjaman = await supabase.from('peminjaman').insert({
+        'user_id': user.id,
+        'alat_id': widget.alat['alat_id'],
+        'tanggal_pinjam': DateFormat('yyyy-MM-dd').format(tglPinjam!),
+        'tanggal_kembali': DateFormat('yyyy-MM-dd').format(tglKembali!),
+        'status': 'menunggu',
+      }).select().single();
 
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Gagal: $e')),
-    );
-  } finally {
-    if (mounted) setState(() => loading = false);
-  }
-}
-
-  Future<void> pilihTanggal(bool pinjam) async {
-    final date = await showDatePicker(
-      context: context,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
-      initialDate: DateTime.now(),
-    );
-    if (date != null) {
-      setState(() {
-        pinjam ? tglPinjam = date : tglKembali = date;
+      // 3. Insert Detail Peminjaman (Data Nama & Kategori Paten)
+      await supabase.from('detail_peminjaman').insert({
+        'peminjaman_id': peminjaman['peminjaman_id'],
+        'alat_id': widget.alat['alat_id'],
+        'jumlah': jumlahPinjam,
+        'nama_alat': widget.alat['nama'] ?? 'Alat',
+        'nama_kategori': namaKategoriReal ?? 'Umum',
       });
+
+      // 4. Update Stok
+      await supabase
+          .from('alat')
+          .update({'stok': stokTersedia - jumlahPinjam})
+          .eq('alat_id', widget.alat['alat_id']);
+
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Berhasil diajukan!')));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e')));
+    } finally {
+      if (mounted) setState(() => loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Ajukan Peminjaman')),
-      body: Padding(
+      appBar: AppBar(title: const Text('Konfirmasi Peminjaman')),
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Alat: ${widget.alat['nama']}',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 20),
-
-            ListTile(
-              title: Text(tglPinjam == null
-                  ? 'Pilih Tanggal Pinjam'
-                  : DateFormat('dd MMM yyyy').format(tglPinjam!)),
-              trailing: const Icon(Icons.date_range),
-              onTap: () => pilihTanggal(true),
+            // STRUK VALIDASI
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: Colors.blue.shade100),
+                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 5)],
+              ),
+              child: Column(
+                children: [
+                  _itemStruk("Nama Alat", widget.alat['nama'] ?? "-"),
+                  _itemStruk("Kategori", namaKategoriReal ?? "Memuat..."),
+                  const Divider(height: 30),
+                  
+                  // INPUT JUMLAH (Hanya ini yang bisa diubah)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Jumlah Pinjam", style: TextStyle(color: Colors.black54)),
+                      Row(
+                        children: [
+                          IconButton(
+                            onPressed: () => setState(() { if(jumlahPinjam > 1) jumlahPinjam--; }),
+                            icon: const Icon(Icons.remove_circle, color: Colors.red),
+                          ),
+                          Text("$jumlahPinjam", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          IconButton(
+                            onPressed: () => setState(() => jumlahPinjam++),
+                            icon: const Icon(Icons.add_circle, color: Colors.green),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            ListTile(
-              title: Text(tglKembali == null
-                  ? 'Pilih Tanggal Kembali'
-                  : DateFormat('dd MMM yyyy').format(tglKembali!)),
-              trailing: const Icon(Icons.date_range),
-              onTap: () => pilihTanggal(false),
-            ),
-
             const SizedBox(height: 20),
+            
+            // PICKER TANGGAL
+            _buildDateTile("Mulai Pinjam", tglPinjam, (d) => setState(() => tglPinjam = d)),
+            const SizedBox(height: 10),
+            _buildDateTile("Kembali", tglKembali, (d) => setState(() => tglKembali = d)),
+            
+            const SizedBox(height: 30),
             SizedBox(
               width: double.infinity,
+              height: 50,
               child: ElevatedButton(
                 onPressed: loading ? null : simpanPeminjaman,
-                child: loading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('Ajukan Peminjaman'),
+                child: loading ? const CircularProgressIndicator() : const Text("KONFIRMASI PINJAM"),
               ),
             )
           ],
         ),
       ),
+    );
+  }
+
+  Widget _itemStruk(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.black54)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDateTile(String label, DateTime? date, Function(DateTime) onPick) {
+    return ListTile(
+      tileColor: Colors.grey.shade100,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      title: Text(label),
+      subtitle: Text(date == null ? "Pilih Tanggal" : DateFormat('dd MMM yyyy').format(date)),
+      trailing: const Icon(Icons.calendar_month),
+      onTap: () async {
+        final d = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 30)));
+        if (d != null) onPick(d);
+      },
     );
   }
 }

@@ -90,7 +90,7 @@ class _LoginPageState extends State<LoginPage> {
       if (data['role'] == 'peminjam') {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const PeminjamAlatPage()),
+          MaterialPageRoute(builder: (_) => const DashboardPeminjamPage()),
         );
         return;
       }

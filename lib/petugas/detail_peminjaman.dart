@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DetailPeminjamanPage extends StatelessWidget {
   final Map<String, dynamic> peminjaman;
@@ -23,6 +24,25 @@ class DetailPeminjamanPage extends StatelessWidget {
         title: const Text('Detail Peminjaman'),
         backgroundColor: Colors.blue,
       ),
+
+      bottomNavigationBar: status == 'menunggu'
+          ? Padding(
+              padding: const EdgeInsets.all(16),
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                onPressed: () => accPeminjaman(context),
+                child: const Text(
+                  'ACC PEMINJAMAN',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            )
+          : null,
+
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -36,6 +56,30 @@ class DetailPeminjamanPage extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  // ================= ACC =================
+  Future<void> accPeminjaman(BuildContext context) async {
+    final supabase = Supabase.instance.client;
+
+    try {
+      await supabase
+          .from('peminjaman')
+          .update({'status': 'disetujui'})
+          .eq('peminjaman_id', peminjaman['peminjaman_id']);
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Peminjaman berhasil disetujui')),
+      );
+
+      Navigator.pop(context, true); // ⬅️ penting buat refresh list
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal ACC: $e')),
+      );
+    }
   }
 
   Widget _item(String label, String value) {
