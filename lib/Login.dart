@@ -22,33 +22,54 @@ class _LoginPageState extends State<LoginPage> {
 
   static const primaryBlue = Color(0xFF1E4ED8);
 
- Future<void> login() async {
-  final username = usernameController.text.trim();
-  final password = passwordController.text.trim();
-
-  if (username.isEmpty || password.isEmpty) {
+  void showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Username & password wajib diisi')),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade600,
+      ),
     );
-    return;
   }
 
-  setState(() => isLoading = true);
+  Future<void> login() async {
+    final username = usernameController.text.trim();
+    final password = passwordController.text.trim();
 
-  // ================= LOGIN AUTH (ADMIN & PEMINJAM) =================
-  try {
-    final auth = await supabase.auth.signInWithPassword(
-      email: username,
-      password: password,
-    );
+    // ===== VALIDASI =====
+    if (username.isEmpty || password.isEmpty) {
+      showError('Username / email dan password wajib diisi');
+      return;
+    }
 
-    final user = auth.user;
+    if (username.contains('@')) {
+      final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+      if (!emailRegex.hasMatch(username)) {
+        showError('Format email tidak valid');
+        return;
+      }
+    }
 
-    if (user != null) {
+    setState(() => isLoading = true);
+
+    // ===== LOGIN ADMIN & PEMINJAM =====
+    try {
+      final auth = await supabase.auth.signInWithPassword(
+        email: username,
+        password: password,
+      );
+
+      final user = auth.user;
+
+      if (user == null) {
+        showError('Akun tidak ditemukan');
+        setState(() => isLoading = false);
+        return;
+      }
+
       final data = await supabase
           .from('users')
           .select('role')
-          .eq('id', user.id) // 
+          .eq('id', user.id)
           .single();
 
       if (!mounted) return;
@@ -64,41 +85,155 @@ class _LoginPageState extends State<LoginPage> {
       if (data['role'] == 'peminjam') {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const PeminjamAlatPage()),
+          MaterialPageRoute(builder: (_) => const DashboardPeminjamPage()),
         );
         return;
       }
+    } on AuthException catch (e) {
+      if (e.message.toLowerCase().contains('invalid')) {
+        showError('Email atau password salah');
+      } else {
+        showError(e.message);
+      }
+    } catch (_) {
+      // lanjut cek petugas
     }
-  } catch (_) {
-    // lanjut cek petugas
+
+    // ===== LOGIN PETUGAS =====
+    try {
+      final petugas = await supabase
+          .from('petugas')
+          .select()
+          .eq('username', username)
+          .eq('password', password)
+          .single();
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HomePetugasPage(petugas: petugas),
+        ),
+      );
+    } catch (_) {
+      showError('Username atau password salah');
+    } finally {
+      setState(() => isLoading = false);
+    }
   }
 
-  // ================= LOGIN PETUGAS =================
-  try {
-    final petugas = await supabase
-        .from('petugas')
-        .select()
-        .eq('username', username)
-        .eq('password', password)
-        .single();
+  Future<void> signInWithGoogle() async {
+    setState(() => isLoading = true);
 
-    if (!mounted) return;
-
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => HomePetugasPage(petugas: petugas),
-      ),
-    );
-  } catch (_) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Username atau password salah')),
-    );
-  } finally {
-    setState(() => isLoading = false);
+    try {
+      // Sign in with Google OAuth
+      final response = await supabase.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: Uri.base.origin,
+      );
+      
+      // OAuth akan redirect ke popup/tab baru
+      // Setelah success, user akan kembali dan session akan otomatis tersimpan
+      
+      // Wait untuk auth state change
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Check jika ada session
+      final session = supabase.auth.currentSession;
+      if (session != null && mounted) {
+        // Login berhasil, check role
+        final user = session.user;
+        
+        final userData = await supabase
+            .from('users')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle();
+        
+        if (!mounted) return;
+        
+        if (userData != null) {
+          final role = userData['role'];
+          
+          if (role == 'admin') {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminHomePage()),
+            );
+          } else if (role == 'peminjam') {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const DashboardPeminjamPage()),
+            );
+          }
+        } else {
+          // User baru, buat entry dengan role peminjam
+          await supabase.from('users').insert({
+            'id': user.id,
+            'email': user.email,
+            'role': 'peminjam',
+          });
+          
+          if (!mounted) return;
+          
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const DashboardPeminjamPage()),
+          );
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showError('Gagal login dengan Google: ${e.toString()}');
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+    }
   }
-}
 
+  @override
+  void initState() {
+    super.initState();
+    _checkExistingSession();
+  }
+
+  Future<void> _checkExistingSession() async {
+    final session = supabase.auth.currentSession;
+    if (session != null && mounted) {
+      // User sudah login, check role
+      final user = session.user;
+      
+      try {
+        final userData = await supabase
+            .from('users')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle();
+        
+        if (!mounted) return;
+        
+        if (userData != null) {
+          final role = userData['role'];
+          
+          if (role == 'admin') {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminHomePage()),
+            );
+          } else if (role == 'peminjam') {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const DashboardPeminjamPage()),
+            );
+          }
+        }
+      } catch (e) {
+        // Ignore error, biarkan user login manual
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -170,11 +305,92 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                 ),
               ),
+
+              const SizedBox(height: 24),
+
+              // Divider OR
+              Row(
+                children: [
+                  Expanded(
+                    child: Divider(
+                      color: Colors.grey.shade300,
+                      thickness: 1,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'OR',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Divider(
+                      color: Colors.grey.shade300,
+                      thickness: 1,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 24),
+
+              // Google Sign-In Button
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: OutlinedButton.icon(
+                  onPressed: isLoading ? null : signInWithGoogle,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.grey.shade300, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    backgroundColor: Colors.white,
+                  ),
+                  icon: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'G',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF4285F4), // Google blue
+                        ),
+                      ),
+                    ),
+                  ),
+                  label: const Text(
+                    'Sign in with Google',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    usernameController.dispose();
+    passwordController.dispose();
+    super.dispose();
   }
 
   Widget _inputField({

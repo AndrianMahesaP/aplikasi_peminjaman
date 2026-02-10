@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'Login.dart';
+import 'peminjam/cart_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,9 +20,12 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: LoginPage(),
+    return ChangeNotifierProvider(
+      create: (_) => CartProvider()..loadCart(),
+      child: const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: LoginPage(),
+      ),
     );
   }
 }

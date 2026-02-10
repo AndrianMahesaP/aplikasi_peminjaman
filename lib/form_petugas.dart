@@ -18,7 +18,6 @@ class _PetugasFormPageState extends State<PetugasFormPage> {
 
   String role = 'Petugas';
   bool loading = false;
-
   final roleList = ['Admin', 'Petugas'];
 
   @override
@@ -36,7 +35,7 @@ class _PetugasFormPageState extends State<PetugasFormPage> {
         usernameController.text.isEmpty ||
         (widget.petugas == null && passwordController.text.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Data belum lengkap')),
+        const SnackBar(content: Text('Mohon lengkapi semua data')),
       );
       return;
     }
@@ -64,7 +63,7 @@ class _PetugasFormPageState extends State<PetugasFormPage> {
       Navigator.pop(context);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal simpan: $e')),
+        SnackBar(content: Text('Gagal menyimpan: $e')),
       );
     } finally {
       setState(() => loading = false);
@@ -74,48 +73,69 @@ class _PetugasFormPageState extends State<PetugasFormPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(widget.petugas == null
-            ? 'Tambah Petugas'
-            : 'Edit Petugas'),
+        title: Text(widget.petugas == null ? 'Tambah Petugas' : 'Edit Petugas'),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(24),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _input(namaController, 'Nama Petugas'),
-            _input(usernameController, 'Username'),
-
+            const Text(
+              'Informasi Akun',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            _input(namaController, 'Nama Lengkap', Icons.person_outline),
+            _input(usernameController, 'Username', Icons.alternate_email),
+            
             if (widget.petugas == null)
-              _input(passwordController, 'Password'),
+              _input(passwordController, 'Password', Icons.lock_outline, obscure: true),
 
+            const SizedBox(height: 8),
             DropdownButtonFormField<String>(
               value: role,
               items: roleList
-                  .map((e) => DropdownMenuItem(
-                        value: e,
-                        child: Text(e),
-                      ))
+                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                   .toList(),
               onChanged: (v) => setState(() => role = v!),
               decoration: InputDecoration(
-                labelText: 'Role',
+                labelText: 'Role Akses',
+                prefixIcon: const Icon(Icons.admin_panel_settings_outlined),
+                filled: true,
+                fillColor: Colors.grey.shade50,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
                 ),
               ),
             ),
 
-            const SizedBox(height: 30),
-
+            const SizedBox(height: 40),
             SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 55,
               child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E4ED8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
                 onPressed: loading ? null : simpan,
                 child: loading
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('SIMPAN'),
+                    : const Text(
+                        'SIMPAN DATA',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
               ),
             ),
           ],
@@ -124,16 +144,28 @@ class _PetugasFormPageState extends State<PetugasFormPage> {
     );
   }
 
-  Widget _input(TextEditingController c, String hint) {
+  Widget _input(TextEditingController c, String label, IconData icon, {bool obscure = false}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 20),
       child: TextField(
         controller: c,
-        obscureText: hint.toLowerCase().contains('password'),
+        obscureText: obscure,
         decoration: InputDecoration(
-          hintText: hint,
+          labelText: label,
+          prefixIcon: Icon(icon),
+          filled: true,
+          fillColor: Colors.grey.shade50,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade200),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade200),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF1E4ED8), width: 2),
           ),
         ),
       ),
