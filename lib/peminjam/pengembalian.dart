@@ -2,11 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PengembalianPage extends StatefulWidget {
-  const PengembalianPage({super.key});
+  final String peminjamanId;
+
+  const PengembalianPage({
+    super.key,
+    required this.peminjamanId,
+  });
 
   @override
   State<PengembalianPage> createState() => _PengembalianPageState();
 }
+
+
+
+  @override
+  State<PengembalianPage> createState() => _PengembalianPageState();
+
 
 class _PengembalianPageState extends State<PengembalianPage> {
   final supabase = Supabase.instance.client;
@@ -31,14 +42,15 @@ class _PengembalianPageState extends State<PengembalianPage> {
       if (userId == null) return;
 
       final data = await supabase
-          .from('peminjaman')
-          .select('*, alat:alat_id(*)') // Join ke tabel alat
-          .eq('user_id', userId)
-          .eq('status', 'dipinjam') // Filter WAJIB
-          .order('tanggal_pinjam');
+    .from('peminjaman')
+    .select('*, alat:alat_id(*)')
+    .eq('peminjaman_id', widget.peminjamanId)
+    .eq('status', 'dipinjam')
+    .single();
+
 
       setState(() {
-        pinjaman = data;
+        pinjaman = [data];
         loading = false;
       });
     } catch (e) {
@@ -47,54 +59,40 @@ class _PengembalianPageState extends State<PengembalianPage> {
     }
   }
 
-  Future<void> prosesKembali(int pinjamId, int alatId, int currentStok) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Kembalikan Alat?'),
-        content: const Text('Pastikan alat sudah dikembalikan dalam kondisi baik.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: greenColor),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Ya, Kembalikan'),
-          ),
-        ],
-      ),
-    );
+ Future<void> prosesKembali(
+  String pinjamId,
+  String alatId,
+  int currentStok,
+) async {
+  try {
+    // 1. update status peminjaman
+    await supabase.from('peminjaman').update({
+      'status': 'selesai',
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('peminjaman_id', pinjamId);
 
-    if (confirm == true) {
-      try {
-        await supabase.from('peminjaman').update({
-          'status': 'selesai',
-          'tanggal_kembali': DateTime.now().toIso8601String(),
-        }).eq('pinjam_id', pinjamId);
+    // 2. insert ke tabel pengembalian
+    await supabase.from('pengembalian').insert({
+      'peminjaman_id': pinjamId,
+      'tgl_dikembalikan': DateTime.now().toIso8601String(),
+      'denda': 0,
+    });
 
-        await supabase.from('alat').update({
-          'stok': currentStok + 1
-        }).eq('id', alatId); 
-       
+    // 3. kembalikan stok alat
+    await supabase.from('alat').update({
+      'stok': currentStok + 1,
+    }).eq('alat_id', alatId);
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Alat berhasil dikembalikan!')),
-          );
-          fetchDipinjam(); // Refresh list
-        }
-      } catch (e) {
-        debugPrint('Error return: $e');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Gagal mengembalikan: $e')),
-          );
-        }
-      }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Barang berhasil dikembalikan')),
+      );
+      Navigator.pop(context);
     }
+  } catch (e) {
+    debugPrint('Error pengembalian: $e');
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -219,11 +217,12 @@ class _PengembalianPageState extends State<PengembalianPage> {
                 ),
                 onPressed: () {
                   // Panggil fungsi kembalikan
-                  prosesKembali(
-                    item['pinjam_id'], 
-                    alat['id'], // Pastikan nama kolom ID alat benar
-                    alat['stok'] ?? 0
-                  );
+                 prosesKembali(
+  item['peminjaman_id'],
+  alat['alat_id'],
+  alat['stok'] ?? 0
+);
+
                 },
                 icon: const Icon(Icons.assignment_return, size: 18),
                 label: const Text('KEMBALIKAN BARANG'),

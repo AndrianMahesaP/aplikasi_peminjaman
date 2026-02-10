@@ -24,24 +24,29 @@ class _AjukanPeminjamanPageState extends State<AjukanPeminjamanPage> {
     _ambilDataKategori();
   }
 
-  // Fungsi untuk mengambil nama kategori berdasarkan kategori_id di tabel alat
-  Future<void> _ambilDataKategori() async {
-    try {
-      final res = await supabase
-          .from('alat')
-          .select('kategori(nama)')
-          .eq('alat_id', widget.alat['alat_id'])
-          .single();
-      
-      if (res['kategori'] != null) {
-        setState(() {
-          namaKategoriReal = res['kategori']['nama'].toString();
-        });
-      }
-    } catch (e) {
-      setState(() => namaKategoriReal = "Umum");
+ Future<void> _ambilDataKategori() async {
+  try {
+    // Gunakan sintaks join tabel yang paling stabil
+    final res = await supabase
+        .from('alat')
+        .select('nama, kategori :kategori (nama)') 
+        .eq('alat_id', widget.alat['alat_id'])
+        .single();
+
+    if (res['kategori'] != null) {
+      setState(() {
+        namaKategoriReal = res['kategori']['nama'].toString();
+      });
     }
+  } catch (e) {
+    debugPrint('Error detail: $e');
+    setState(() {
+      namaKategoriReal = 'Kategori Tidak Ditemukan';
+    });
   }
+}
+
+
 
   Future<void> simpanPeminjaman() async {
     final user = supabase.auth.currentUser;
@@ -80,7 +85,7 @@ class _AjukanPeminjamanPageState extends State<AjukanPeminjamanPage> {
         'alat_id': widget.alat['alat_id'],
         'jumlah': jumlahPinjam,
         'nama_alat': widget.alat['nama'] ?? 'Alat',
-        'nama_kategori': namaKategoriReal ?? 'Umum',
+        'nama_kategori': namaKategoriReal ?? '',
       });
 
       // 4. Update Stok
@@ -122,7 +127,6 @@ class _AjukanPeminjamanPageState extends State<AjukanPeminjamanPage> {
                   _itemStruk("Kategori", namaKategoriReal ?? "Memuat..."),
                   const Divider(height: 30),
                   
-                  // INPUT JUMLAH (Hanya ini yang bisa diubah)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [

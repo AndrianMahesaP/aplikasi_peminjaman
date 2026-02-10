@@ -49,11 +49,6 @@ class _LoginPageState extends State<LoginPage> {
       }
     }
 
-    if (password.length < 3) {
-      showError('Password minimal 3 karakter');
-      return;
-    }
-
     setState(() => isLoading = true);
 
     // ===== LOGIN ADMIN & PEMINJAM =====

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pinjam_alat/peminjam/pengembalian.dart';
+
 
 class StatusPeminjamanPage extends StatefulWidget {
   const StatusPeminjamanPage({super.key});
@@ -31,19 +33,41 @@ class _StatusPeminjamanPageState extends State<StatusPeminjamanPage>
 
     setState(() => loading = true);
 
-    // 🔹 STATUS = belum disetujui
-    final statusResult = await supabase
-    .from('peminjaman')
-    .select('peminjaman_id, status, alat(nama)')
+   final statusResult = await supabase
+    .from('detail_peminjaman')
+    .select('''
+      id,
+      jumlah,
+      peminjaman:peminjaman_id (
+        peminjaman_id,
+        status,
+        user_id
+      ),
+      alat:alat_id (
+        nama_alat,
+        nama_kategori
+      )
+    ''')
     .eq('user_id', user.id)
     .neq('status', 'disetujui')
     .order('created_at', ascending: false);
 
 
-    // 🔹 AKTIVITAS = sudah disetujui
-    final aktivitasResult = await supabase
-    .from('peminjaman')
-    .select('peminjaman_id, status, alat(nama)')
+   final aktivitasResult = await supabase
+    .from('detail_peminjaman')
+    .select('''
+      id,
+      jumlah,
+      peminjaman:peminjaman_id (
+        peminjaman_id,
+        status,
+        user_id
+      ),
+      alat:alat_id (
+        nama_alat,
+        nama_kategori
+      )
+    ''')
     .eq('user_id', user.id)
     .eq('status', 'disetujui')
     .order('created_at', ascending: false);
@@ -71,22 +95,37 @@ class _StatusPeminjamanPageState extends State<StatusPeminjamanPage>
           final namaAlat = item['alat']?['nama'] ?? '-';
 
           return Card(
-            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: ListTile(
-              title: Text(namaAlat),
-              subtitle: Text(
-                isAktivitas
-                    ? 'Status: Disetujui'
-                    : 'Status: ${item['status']}',
-              ),
-              trailing: Icon(
-                isAktivitas
-                    ? Icons.check_circle
-                    : Icons.hourglass_top,
-                color: isAktivitas ? Colors.green : Colors.orange,
-              ),
+  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+  child: ListTile(
+    title: Text(namaAlat),
+    subtitle: Text(
+      'Status: ${item['peminjaman']['status']}',
+    ),
+
+    trailing: isAktivitas
+        ? ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
             ),
-          );
+            onPressed: () {
+              Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => PengembalianPage(
+      peminjamanId: item['peminjaman']['peminjaman_id'],
+    ),
+  ),
+              ).then((_) => fetchData());
+            },
+            child: const Text(
+              'Kembalikan',
+              style: TextStyle(color: Colors.white),
+            ),
+          )
+        : const Icon(Icons.hourglass_top, color: Colors.orange),
+  ),
+);
+
         },
       ),
     );
@@ -102,7 +141,7 @@ class _StatusPeminjamanPageState extends State<StatusPeminjamanPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Peminjaman'),
+        title: const Text('peminjaman'),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [

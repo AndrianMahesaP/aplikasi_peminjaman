@@ -122,7 +122,6 @@ class _AlatPageState extends State<AlatPage> {
         elevation: 0,
         centerTitle: false,
         actions: [
-          // Menu Kategori dipindah kene ben rapi
           PopupMenuButton<String>(
             icon: Icon(Icons.settings, color: primaryColor),
             tooltip: 'Atur Kategori',

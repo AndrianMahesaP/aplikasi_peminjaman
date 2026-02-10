@@ -221,30 +221,32 @@ class _HomeAlatViewState extends State<HomeAlatView> {
           ),
           
           ElevatedButton(
-  style: ElevatedButton.styleFrom(
-    backgroundColor: primaryColor,
-    minimumSize: const Size(70, 40), 
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(10),
-    ),
-  ),
-  onPressed: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AjukanPeminjamanPage(alat: item),
-      ),
-    );
-  },
-  child: const Text(
-    'Pinjam',
-    style: TextStyle(
-      color: Colors.white, 
-      fontWeight: FontWeight.bold,
-    ),
-  ),
-),
-
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primaryColor,
+              minimumSize: const Size(70, 40), 
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AjukanPeminjamanPage(alat: item),
+                ),
+              ).then((_) {
+                 // Refresh list saat kembali (agar stok update)
+                 fetchAlat(); 
+              });
+            },
+            child: const Text(
+              'Pinjam',
+              style: TextStyle(
+                color: Colors.white, 
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -276,7 +278,7 @@ class AktivitasView extends StatelessWidget {
         ),
         body: const TabBarView(
           children: [
-            StatusList(statusFilter: ['pending', 'dipinjam']), // Sesuaikan status DB
+            StatusList(statusFilter: ['menunggu', 'disetujui']), // Sesuaikan status DB
             StatusList(statusFilter: ['selesai', 'ditolak']),
           ],
         ),
@@ -306,18 +308,26 @@ class _StatusListState extends State<StatusList> {
   }
 
   Future<void> fetchData() async {
-    // Ganti 'peminjaman' sesuai nama tabel transaksimu
-    // Pastikan tabel peminjaman ada relasi ke tabel 'alat'
     try {
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) return;
 
       final res = await supabase
-          .from('peminjaman')
-          .select('*, alat:alat_id(nama, gambar)') // Join table alat
-          .eq('user_id', userId) // Filter punya user ini saja
-          .inFilter('status', widget.statusFilter)
-          .order('created_at', ascending: false);
+    .from('peminjaman')
+    .select('''
+      peminjaman_id,
+      status,
+      tanggal_pinjam,
+      alat:alat_id (
+        alat_id,
+        nama,
+        gambar
+      )
+    ''')
+    .eq('user_id', userId)
+    .inFilter('status', widget.statusFilter)
+    .order('created_at', ascending: false);
+
 
       if (mounted) {
         setState(() {
@@ -328,6 +338,24 @@ class _StatusListState extends State<StatusList> {
     } catch (e) {
       debugPrint('Error history: $e');
       if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _accOlehPetugas(String pinjamId, String alatId, int stokSaatIni) async {
+    try {
+      if (stokSaatIni <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Stok habis! Tidak bisa ACC.')));
+        return;
+      }
+      
+      // Update Status jadi 'dipinjam' & Kurangi Stok
+      await supabase.from('peminjaman').update({'status': 'dipinjam'}).eq('peminjaman_id', pinjamId);
+      await supabase.from('alat').update({'stok': stokSaatIni - 1}).eq('alat_id', alatId);
+
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ACC Berhasil. Stok berkurang.')));
+      fetchData(); // Refresh
+    } catch (e) {
+      debugPrint("Error ACC: $e");
     }
   }
 
@@ -354,6 +382,11 @@ class _StatusListState extends State<StatusList> {
         final item = data[index];
         final alat = item['alat'] ?? {};
         final status = item['status'] ?? 'unknown';
+        
+        // Data untuk trigger stok
+        final pinjamId = item['id'];
+        final alatId = alat['id'];
+        final currentStok = alat['stok'] ?? 0;
 
         Color statusColor;
         if (status == 'dipinjam') {
@@ -365,8 +398,8 @@ class _StatusListState extends State<StatusList> {
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: ListTile(
-            contentPadding: const EdgeInsets.all(12),
+          child: ExpansionTile( // Ubah jadi ExpansionTile agar ada tombol aksi di bawah
+            tilePadding: const EdgeInsets.all(12),
             leading: CircleAvatar(
               backgroundColor: Colors.grey.shade100,
               child: const Icon(Icons.build, color: Colors.grey),
@@ -391,6 +424,28 @@ class _StatusListState extends State<StatusList> {
                 style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold),
               ),
             ),
+            children: [
+              // AREA TOMBOL AKSI (TRIGGER STOK)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                   
+                    if (status == 'pending')
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueAccent,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () => _accOlehPetugas(pinjamId, alatId, currentStok),
+                        icon: const Icon(Icons.admin_panel_settings, size: 16),
+                        label: const Text('Simulasi Petugas: ACC'),
+                      ),
+                  ],
+                ),
+              )
+            ],
           ),
         );
       },
