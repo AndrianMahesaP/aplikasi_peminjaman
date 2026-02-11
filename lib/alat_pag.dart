@@ -23,7 +23,7 @@ class _AlatPageState extends State<AlatPage> {
   String keyword = '';
   String selectedKategori = 'Semua';
 
-  List<String> kategoriList = ['Semua', 'Lainnya'];
+  List<String> kategoriList = ['Semua'];
 
   @override
   void initState() {
@@ -42,7 +42,6 @@ class _AlatPageState extends State<AlatPage> {
 
       setState(() {
         kategoriList = ['Semua', ...loaded];
-        if (!kategoriList.contains('Lainnya')) kategoriList.add('Lainnya');
       });
     } catch (e) {
       debugPrint('Error fetch kategori: $e');
@@ -351,7 +350,7 @@ class _AlatPageState extends State<AlatPage> {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        'Denda: Rp $denda /jam',
+                        'Denda: Rp $denda /hari',
                         style: TextStyle(
                             fontSize: 12,
                             color: Colors.amber.shade900,

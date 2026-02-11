@@ -73,69 +73,93 @@ class _PetugasFormPageState extends State<PetugasFormPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF3F4F6), // Soft Grey
       appBar: AppBar(
-        title: Text(widget.petugas == null ? 'Tambah Petugas' : 'Edit Petugas'),
+        title: Text(widget.petugas == null ? 'Tambah Petugas' : 'Edit Petugas',
+            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
         elevation: 0,
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        foregroundColor: Colors.black87,
+        iconTheme: const IconThemeData(color: Colors.black87),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Informasi Akun',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 20),
-            _input(namaController, 'Nama Lengkap', Icons.person_outline),
-            _input(usernameController, 'Username', Icons.alternate_email),
-            
-            if (widget.petugas == null)
-              _input(passwordController, 'Password', Icons.lock_outline, obscure: true),
-
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: role,
-              items: roleList
-                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                  .toList(),
-              onChanged: (v) => setState(() => role = v!),
-              decoration: InputDecoration(
-                labelText: 'Role Akses',
-                prefixIcon: const Icon(Icons.admin_panel_settings_outlined),
-                filled: true,
-                fillColor: Colors.grey.shade50,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade200),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade200),
-                ),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-            ),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Informasi Akun',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 20),
+                  _input(namaController, 'Nama Lengkap', Icons.person_outline),
+                  _input(usernameController, 'Username', Icons.alternate_email),
+                  
+                  if (widget.petugas == null)
+                    _input(passwordController, 'Password', Icons.lock_outline, obscure: true),
 
-            const SizedBox(height: 40),
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1E4ED8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  elevation: 0,
-                ),
-                onPressed: loading ? null : simpan,
-                child: loading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                        'SIMPAN DATA',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: role,
+                    items: roleList
+                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                        .toList(),
+                    onChanged: (v) => setState(() => role = v!),
+                    decoration: InputDecoration(
+                      labelText: 'Role Akses',
+                      prefixIcon: const Icon(Icons.admin_panel_settings_outlined),
+                      filled: true,
+                      fillColor: Colors.grey.shade50,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
                       ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFF4F46E5), width: 2),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 40),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 55,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4F46E5), // Indigo
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      onPressed: loading ? null : simpan,
+                      child: loading
+                          ? const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
+                          : const Text(
+                              'SIMPAN DATA',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                            ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -165,7 +189,7 @@ class _PetugasFormPageState extends State<PetugasFormPage> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF1E4ED8), width: 2),
+            borderSide: const BorderSide(color: Color(0xFF4F46E5), width: 2),
           ),
         ),
       ),

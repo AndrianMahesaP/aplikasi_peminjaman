@@ -42,12 +42,15 @@ class _PengembalianPageState extends State<PengembalianPage> {
       if (userId == null) return;
 
       final data = await supabase
-    .from('peminjaman')
-    .select('*, alat:alat_id(*)')
-    .eq('peminjaman_id', widget.peminjamanId)
-    .eq('status', 'dipinjam')
-    .single();
-
+          .from('peminjaman')
+          .select('''
+            *,
+            alat:alat_id(*),
+            detail_peminjaman!inner(jumlah)
+          ''')
+          .eq('peminjaman_id', widget.peminjamanId)
+          .eq('status', 'disetujui')
+          .single();
 
       setState(() {
         pinjaman = [data];
@@ -59,40 +62,61 @@ class _PengembalianPageState extends State<PengembalianPage> {
     }
   }
 
- Future<void> prosesKembali(
-  String pinjamId,
-  String alatId,
-  int currentStok,
-) async {
-  try {
-    // 1. update status peminjaman
-    await supabase.from('peminjaman').update({
-      'status': 'selesai',
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('peminjaman_id', pinjamId);
+  Future<void> prosesKembali(
+    String pinjamId,
+    String alatId,
+    int currentStok,
+    String tanggalKembali,
+    int dendaPerHari,
+    int jumlahPinjam,
+  ) async {
+    try {
+      // Calculate penalty if late
+      final today = DateTime.now();
+      final returnDate = DateTime.parse(tanggalKembali);
+      final daysLate = today.difference(returnDate).inDays;
+      final totalDenda = daysLate > 0 ? (daysLate * dendaPerHari * jumlahPinjam) : 0;
 
-    // 2. insert ke tabel pengembalian
-    await supabase.from('pengembalian').insert({
-      'peminjaman_id': pinjamId,
-      'tgl_dikembalikan': DateTime.now().toIso8601String(),
-      'denda': 0,
-    });
+      // 1. update status peminjaman
+      await supabase.from('peminjaman').update({
+        'status': 'selesai',
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('peminjaman_id', pinjamId);
 
-    // 3. kembalikan stok alat
-    await supabase.from('alat').update({
-      'stok': currentStok + 1,
-    }).eq('alat_id', alatId);
+      // 2. insert ke tabel pengembalian with calculated penalty
+      await supabase.from('pengembalian').insert({
+        'peminjaman_id': pinjamId,
+        'tgl_dikembalikan': DateTime.now().toIso8601String(),
+        'denda': totalDenda,
+      });
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Barang berhasil dikembalikan')),
-      );
-      Navigator.pop(context);
+      // 3. kembalikan stok alat
+      await supabase.from('alat').update({
+        'stok': currentStok + jumlahPinjam,
+      }).eq('alat_id', alatId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              totalDenda > 0
+                  ? 'Dikembalikan dengan denda Rp ${totalDenda.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')}'
+                  : 'Barang berhasil dikembalikan tepat waktu!',
+            ),
+            backgroundColor: totalDenda > 0 ? Colors.orange : Colors.green,
+          ),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      debugPrint('Error pengembalian: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal mengembalikan: $e')),
+        );
+      }
     }
-  } catch (e) {
-    debugPrint('Error pengembalian: $e');
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -125,14 +149,29 @@ class _PengembalianPageState extends State<PengembalianPage> {
   }
 
   Widget _buildReturnCard(Map item, Map alat) {
+    final tanggalKembali = item['tanggal_kembali'] ?? '';
+    final tanggalPinjam = item['tanggal_pinjam'] ?? '';
+    final dendaPerHari = alat['denda'] ?? 0;
+    final jumlahPinjam = (item['detail_peminjaman'] is List && (item['detail_peminjaman'] as List).isNotEmpty)
+        ? (item['detail_peminjaman'][0]['jumlah'] ?? 1)
+        : 1;
+    
+    // Calculate if late
+    final today = DateTime.now();
+    final returnDate = tanggalKembali.isNotEmpty ? DateTime.parse(tanggalKembali) : today;
+    final daysLate = today.difference(returnDate).inDays;
+    final isLate = daysLate > 0;
+    final totalDenda = isLate ? (daysLate * dendaPerHari * jumlahPinjam) : 0;
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
+        border: isLate ? Border.all(color: Colors.red.shade200, width: 2) : null,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: isLate ? Colors.red.withOpacity(0.1) : Colors.black.withOpacity(0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -178,23 +217,24 @@ class _PengembalianPageState extends State<PengembalianPage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Dipinjam tgl: ${item['tanggal_pinjam']?.substring(0, 10)}',
+                        'Jumlah: $jumlahPinjam unit',
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Dipinjam: ${tanggalPinjam.substring(0, 10)}',
                         style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                       ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          'Status: Sedang Dipinjam',
-                          style: TextStyle(
-                            color: Colors.orange.shade800,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
+                      Text(
+                        'Harus kembali: ${tanggalKembali.substring(0, 10)}',
+                        style: TextStyle(
+                          color: isLate ? Colors.red : Colors.grey.shade600,
+                          fontSize: 13,
+                          fontWeight: isLate ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
                     ],
@@ -202,6 +242,80 @@ class _PengembalianPageState extends State<PengembalianPage> {
                 ),
               ],
             ),
+            
+            // Late warning
+            if (isLate) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.red.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'TERLAMBAT $daysLate HARI',
+                            style: TextStyle(
+                              color: Colors.red.shade900,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Denda: Rp ${totalDenda.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')}',
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          Text(
+                            'Rp $dendaPerHari/hari × $daysLate hari × $jumlahPinjam unit',
+                            style: TextStyle(
+                              color: Colors.red.shade600,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green.shade700, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Masih dalam waktu / tepat waktu - Tidak ada denda',
+                      style: TextStyle(
+                        color: Colors.green.shade800,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            
             const Divider(height: 24),
             
             // Tombol Aksi
@@ -209,23 +323,50 @@ class _PengembalianPageState extends State<PengembalianPage> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
+                  backgroundColor: isLate ? Colors.orange : primaryColor,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 onPressed: () {
-                  // Panggil fungsi kembalikan
-                 prosesKembali(
-  item['peminjaman_id'],
-  alat['alat_id'],
-  alat['stok'] ?? 0
-);
-
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: Text(isLate ? 'Konfirmasi Pengembalian + Denda' : 'Konfirmasi Pengembalian'),
+                      content: Text(
+                        isLate
+                            ? 'Anda akan mengembalikan barang dengan denda Rp ${totalDenda.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')} karena terlambat $daysLate hari.'
+                            : 'Anda akan mengembalikan barang tepat waktu tanpa denda.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Batal'),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: isLate ? Colors.orange : primaryColor,
+                          ),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            prosesKembali(
+                              item['peminjaman_id'],
+                              alat['alat_id'],
+                              alat['stok'] ?? 0,
+                              tanggalKembali,
+                              dendaPerHari,
+                              jumlahPinjam,
+                            );
+                          },
+                          child: const Text('Ya, Kembalikan'),
+                        ),
+                      ],
+                    ),
+                  );
                 },
                 icon: const Icon(Icons.assignment_return, size: 18),
-                label: const Text('KEMBALIKAN BARANG'),
+                label: Text(isLate ? 'KEMBALIKAN + BAYAR DENDA' : 'KEMBALIKAN BARANG'),
               ),
             ),
           ],

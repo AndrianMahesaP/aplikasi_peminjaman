@@ -54,7 +54,7 @@ class PengaturanAdminPage extends StatelessWidget {
         content: const Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.sports_soccer_rounded, size: 50, color: Color(0xFF1E4ED8)),
+            Icon(Icons.sports_soccer_rounded, size: 50, color: Color(0xFF4F46E5)),
             SizedBox(height: 16),
             Text(
               'Aplikasi Peminjaman Alat Olahraga',
@@ -82,10 +82,10 @@ class PengaturanAdminPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: const Color(0xFFF3F4F6),
       body: Column(
         children: [
-          // HEADER BIRU DENGAN LENGKUNGAN (Mirip Home Admin)
+          // HEADER INDIGO DENGAN LENGKUNGAN (Mirip Home Admin)
           Container(
             width: double.infinity,
             height: 180,
@@ -93,7 +93,7 @@ class PengaturanAdminPage extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFF1E4ED8), Color(0xFF3B82F6)],
+                colors: [Color(0xFF4F46E5), Color(0xFF6366F1)], // Indigo Gradient
               ),
               borderRadius: BorderRadius.only(
                 bottomLeft: Radius.circular(30),
@@ -147,7 +147,7 @@ class PengaturanAdminPage extends StatelessWidget {
                         const CircleAvatar(
                           radius: 30,
                           backgroundColor: Color(0xFFE0E7FF),
-                          child: Icon(Icons.person_rounded, color: Color(0xFF1E4ED8), size: 35),
+                          child: Icon(Icons.person_rounded, color: Color(0xFF4F46E5), size: 35),
                         ),
                         const SizedBox(width: 15),
                         Column(
@@ -193,7 +193,7 @@ class PengaturanAdminPage extends StatelessWidget {
                           icon: Icons.info_outline_rounded,
                           title: 'Tentang Aplikasi',
                           subtitle: 'Informasi detail aplikasi',
-                          color: Colors.blue,
+                          color: const Color(0xFF4F46E5),
                           onTap: () => showTentangDialog(context),
                         ),
                         const Divider(height: 1, indent: 60),

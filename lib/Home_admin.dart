@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 // Import halaman lain sesuai project kamu
 import 'alat_pag.dart';
 import 'crud_petugas.dart';
 import 'profil_admin.dart';
 import 'denda.dart';
+import 'admin/kelola_peminjaman.dart';
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
@@ -23,8 +25,9 @@ class _AdminHomePageState extends State<AdminHomePage> {
   // State Data
   int _jmlDipinjam = 0;
   int _jmlTersedia = 0;
-  List<RiwayatItem> _listSedangDipinjam = [];
-  List<RiwayatItem> _listRiwayatKembali = [];
+  int _totalDenda = 0;
+  List<RiwayatItem> _listRiwayat = [];
+  Map<String, int> _dailyBorrowData = {};
   bool _isLoading = true;
 
   @override
@@ -34,106 +37,170 @@ class _AdminHomePageState extends State<AdminHomePage> {
   }
 
   Future<void> _fetchDashboardData() async {
+    // Temp variables
+    int tempDipinjam = 0;
+    int tempStok = 0;
+    int tempDenda = 0;
+    Map<String, int> tempDailyData = {};
+    List<RiwayatItem> tempRiwayat = [];
+
+    // 1. Hitung Sedang Dipinjam
     try {
-      // 1. Hitung Sedang Dipinjam
-      // Menggunakan count exact untuk akurasi
       final countDipinjam = await supabase
           .from('peminjaman')
           .count(CountOption.exact)
           .eq('status', 'disetujui');
+      tempDipinjam = countDipinjam;
+    } catch (e) {
+      debugPrint("Error Fetch Dipinjam: $e");
+    }
 
-      // 2. Hitung Total Stok (Sum kolom 'stok' dari tabel 'alat')
-      final resAlat = await supabase
-          .from('alat')
-          .select('stok');
-      
-      int totalStok = 0;
+    // 2. Hitung Total Stok
+    try {
+      final resAlat = await supabase.from('alat').select('stok');
       for (var item in resAlat) {
-        // Handle stok null atau tipe bigint
-        totalStok += (item['stok'] ?? 0) as int;
-      }
-
-      // 3. Ambil Data "Sedang Dipinjam" (Limit 3)
-      // Relasi: alat (public.alat), users (public.users)
-      final dataDipinjam = await supabase
-          .from('peminjaman')
-          .select('*, alat:alat_id(nama), users:user_id(email)') 
-          .eq('status', 'distujui')
-          .order('created_at', ascending: false)
-          .limit(3);
-
-      // 4. Ambil Data "Riwayat Pengembalian" (Limit 3)
-      final dataKembali = await supabase
-          .from('peminjaman')
-          .select('*, alat:alat_id(nama), users:user_id(email)')
-          .eq('status', 'selesai') // Pastikan status di DB konsisten ('selesai'/'dikembalikan')
-          .order('updated_at', ascending: false)
-          .limit(3);
-
-      if (mounted) {
-        setState(() {
-          _jmlDipinjam = countDipinjam;
-          _jmlTersedia = totalStok;
-          _listSedangDipinjam = (dataDipinjam as List).map((e) => _mapToModel(e)).toList();
-          _listRiwayatKembali = (dataKembali as List).map((e) => _mapToModel(e)).toList();
-          _isLoading = false;
-        });
+        tempStok += (item['stok'] ?? 0) as int;
       }
     } catch (e) {
-      debugPrint("Error Fetch Dashboard: $e");
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint("Error Fetch Stok: $e");
+    }
+
+    // 3. Hitung Total Denda Minggu Ini
+    try {
+      final now = DateTime.now();
+      final weekAgo = now.subtract(const Duration(days: 7));
+      final resDenda = await supabase
+          .from('pengembalian')
+          .select('denda')
+          .gte('tgl_dikembalikan', weekAgo.toIso8601String());
+      
+      for (var item in resDenda) {
+        tempDenda += (item['denda'] ?? 0) as int;
+      }
+    } catch (e) {
+      debugPrint("Error Fetch Denda: $e");
+    }
+
+    // 4. Data Peminjaman 7 Hari Terakhir untuk Chart
+    try {
+      final now = DateTime.now();
+      final weekAgo = now.subtract(const Duration(days: 7));
+      
+      // Init 0
+      for (int i = 6; i >= 0; i--) {
+        final date = now.subtract(Duration(days: i));
+        final dateStr = DateFormat('yyyy-MM-dd').format(date);
+        tempDailyData[dateStr] = 0;
+      }
+
+      final resBorrow = await supabase
+          .from('peminjaman')
+          .select('tanggal_pinjam')
+          .gte('tanggal_pinjam', DateFormat('yyyy-MM-dd').format(weekAgo));
+      
+      for (var item in resBorrow) {
+        final dateStr = item['tanggal_pinjam']?.toString().split(' ')[0];
+        if (dateStr != null && tempDailyData.containsKey(dateStr)) {
+          tempDailyData[dateStr] = (tempDailyData[dateStr] ?? 0) + 1;
+        }
+      }
+    } catch (e) {
+      debugPrint("Error Fetch Chart: $e");
+    }
+
+    // 5. Ambil Log Aktivitas Terbaru (Log Aktivitas)
+    try {
+      final dataLog = await supabase
+          .from('log_aktivitas')
+          .select('*, users:user_id(email)')
+          .order('created_at', ascending: false)
+          .limit(6);
+      
+      tempRiwayat = (dataLog as List).map((e) => _mapToModel(e)).toList();
+    } catch (e) {
+      debugPrint("Error Fetch Log Aktivitas: $e");
+      // Fallback ke peminjaman jika log_aktivitas gagal/tidak ada
+      try {
+         final dataRiwayat = await supabase
+          .from('peminjaman')
+          .select('*, alat:alat_id(nama), users:user_id(email)')
+          .inFilter('status', ['disetujui', 'selesai'])
+          .order('created_at', ascending: false)
+          .limit(6);
+         
+         // Mapper khusus fallback (karena log pakai _mapToModel yang asumsi kolom log_aktivitas)
+         // Kita pakai mapper manual disini agar aman
+         tempRiwayat = (dataRiwayat as List).map((data) {
+            final alat = data['alat'] ?? {'nama': 'Alat'};
+            final user = data['users'] ?? {'email': 'User'};
+            DateTime date = data['created_at'] != null ? DateTime.parse(data['created_at']) : DateTime.now();
+            String userName = user['email'] != null ? user['email'].split('@')[0] : 'Guest';
+            
+            return RiwayatItem(
+              waktu: DateFormat('dd MMM HH:mm').format(date.toLocal()),
+              nama: userName,
+              barang: alat['nama'] ?? '-',
+              nominal: '-',
+              status: data['status'] == 'disetujui' ? 'Dipinjam' : 'Selesai',
+              statusColor: data['status'] == 'disetujui' ? Colors.orange : Colors.green,
+            );
+         }).toList();
+
+      } catch (e2) {
+        debugPrint("Error Fetch Fallback Peminjaman: $e2");
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _jmlDipinjam = tempDipinjam;
+        _jmlTersedia = tempStok;
+        _totalDenda = tempDenda;
+        _dailyBorrowData = tempDailyData;
+        _listRiwayat = tempRiwayat;
+        _isLoading = false;
+      });
     }
   }
 
   RiwayatItem _mapToModel(Map<String, dynamic> data) {
-    final alat = data['alat'] ?? {'nama': 'Alat Dihapus'};
-    final user = data['users'] ?? {'email': 'User'};
+    final user = data['users'] ?? {'email': 'System'};
+    final aktivitas = data['aktivitas'] ?? 'Aktivitas tidak diketahui';
     
-    // Safety check tanggal
     DateTime date;
-    if (data['updated_at'] != null) {
-      date = DateTime.parse(data['updated_at']);
-    } else {
+    if (data['created_at'] != null) {
       date = DateTime.parse(data['created_at']);
+    } else {
+      date = DateTime.now();
     }
 
-    // Ambil nama dari email
     String userName = 'Guest';
     if (user['email'] != null) {
       userName = user['email'].split('@')[0];
+    } else {
+      userName = 'System';
     }
 
     return RiwayatItem(
       waktu: DateFormat('dd MMM HH:mm').format(date.toLocal()),
       nama: userName,
-      barang: alat['nama'] ?? '-',
-      // Nominal strip dulu, bisa diisi denda jika status selesai & ada denda
-      nominal: data['status'] == 'selesai' ? 'Selesai' : 'disetujui',
-      status: data['status'] == 'disetujui' ? 'disetujui' : 'Dikembalikan',
-      statusColor: data['status'] == 'disetujui' ? Colors.orange : Colors.green,
+      barang: aktivitas, // Menampilkan aktivitas di kolom barang
+      nominal: '-',
+      status: 'Info',
+      statusColor: Colors.blueAccent,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Mengatur status bar agar terlihat rapi
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: const Color(0xFFF3F4F6), // Soft Grey
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: const Color(0xFF1E4ED8),
-        title: const Text('Dashboard Admin', style: TextStyle(color: Colors.white)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: () {
-                setState(() => _isLoading = true);
-                _fetchDashboardData();
-            },
-          ),
-        ],
+        backgroundColor: const Color(0xFF4F46E5), // Indigo
+        toolbarHeight: 0, // Remove AppBar content
       ),
       body: IndexedStack(
         index: _currentIndex,
@@ -151,60 +218,59 @@ class _AdminHomePageState extends State<AdminHomePage> {
   }
 
   Widget _berandaAdmin() {
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      child: Column(
-        children: [
-          _buildHeader(),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Menggeser kartu statistik ke atas agar menumpuk header
-                Transform.translate(
-                  offset: const Offset(0, -40),
-                  child: _buildSummaryStats(),
-                ),
-                
-                // --- SECTION SEDANG DIPINJAM ---
-                _buildSectionTitle('Sedang Dipinjam', Icons.timer_outlined),
-                const SizedBox(height: 12),
-                _listSedangDipinjam.isEmpty
-                    ? const Padding(padding: EdgeInsets.all(20), child: Center(child: Text("Tidak ada peminjaman aktif.")))
-                    : _buildTransactionCard(data: _listSedangDipinjam, isBorrowing: true),
+    return RefreshIndicator(
+      onRefresh: () async {
+        setState(() => _isLoading = true);
+        await _fetchDashboardData();
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          children: [
+            _buildModernHeader(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Stats Cards Grid
+                  Transform.translate(
+                    offset: const Offset(0, -40),
+                    child: _buildStatsGrid(),
+                  ),
+                  
+                  // Chart Section
+                  const Text(
+                    'Peminjaman 7 Hari Terakhir',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildChart(),
+                  const SizedBox(height: 32),
+                  
+                  // Riwayat Section (Combined)
+                  _buildSectionTitle('Aktivitas Terbaru', Icons.history_outlined),
+                  const SizedBox(height: 16),
+                  _listRiwayat.isEmpty
+                      ? const Padding(padding: EdgeInsets.all(20), child: Center(child: Text("Belum ada aktivitas.")))
+                      : _buildModernActivityCards(),
 
-                const SizedBox(height: 24),
-
-                // --- SECTION RIWAYAT ---
-                _buildSectionTitle('Riwayat Terbaru', Icons.history),
-                const SizedBox(height: 12),
-                _listRiwayatKembali.isEmpty
-                    ? const Padding(padding: EdgeInsets.all(20), child: Center(child: Text("Belum ada riwayat.")))
-                    : _buildTransactionCard(data: _listRiwayatKembali, isBorrowing: false),
-
-                const SizedBox(height: 30),
-              ],
+                  const SizedBox(height: 30),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  // --- WIDGET BUILDERS (Header, Nav, Cards) SAMA SEPERTI SEBELUMNYA ---
-  // Saya persingkat bagian UI statis agar fokus ke logic database di atas.
-  
-  Widget _buildHeader() {
+  Widget _buildModernHeader() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 80),
+      padding: const EdgeInsets.fromLTRB(20, 40, 20, 80),
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF1E4ED8), Color(0xFF3B82F6)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Color(0xFF4F46E5), // Indigo Flat
         borderRadius: BorderRadius.only(
           bottomLeft: Radius.circular(30),
           bottomRight: Radius.circular(30)
@@ -213,10 +279,308 @@ class _AdminHomePageState extends State<AdminHomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: const [
-          Text('Halo, Admin', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-          SizedBox(height: 5),
-          Text('Pantau aktivitas laboratorium', style: TextStyle(color: Colors.white70)),
+          Text('Halo, Admin', style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
+          SizedBox(height: 8),
+          Text('Pantau aktivitas laboratorium', style: TextStyle(color: Colors.white70, fontSize: 15)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildStatsGrid() {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 15,
+      mainAxisSpacing: 15,
+      childAspectRatio: 1.3,
+      children: [
+        InkWell(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DetailBarangDipinjamPage())),
+          child: _modernStatCard(
+            'Dipinjam',
+            '$_jmlDipinjam',
+            Icons.outbox,
+            Colors.orange,
+          ),
+        ),
+        _modernStatCard(
+          'Stok Alat',
+          '$_jmlTersedia',
+          Icons.inventory_2,
+          Colors.green,
+        ),
+        InkWell(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RekapanDendaPage())),
+          child: _modernStatCard(
+            'Denda Minggu Ini',
+            'Rp ${NumberFormat('#,###', 'id_ID').format(_totalDenda)}',
+            Icons.money_off,
+            Colors.red,
+          ),
+        ),
+        _modernStatCardWithChart(
+          'Total Transaksi',
+          '${_jmlDipinjam + _listRiwayat.length}',
+          Icons.receipt_long,
+          const Color(0xFF4F46E5), // Indigo
+        ),
+      ],
+    );
+  }
+
+  Widget _modernStatCard(String label, String val, IconData icon, Color iconColor) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: iconColor, size: 24),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                val,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Stat card dengan mini chart untuk Total Transaksi
+  Widget _modernStatCardWithChart(String label, String val, IconData icon, Color iconColor) {
+    final entries = _dailyBorrowData.entries.toList();
+    final spots = <FlSpot>[];
+    
+    for (int i = 0; i < entries.length; i++) {
+      spots.add(FlSpot(i.toDouble(), entries[i].value.toDouble()));
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header with icon
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              Text(
+                '7 hari',
+                style: TextStyle(
+                  color: Colors.grey.shade500,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          
+          // Value and label
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                val,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // Mini chart
+          SizedBox(
+            height: 40,
+            child: LineChart(
+              LineChartData(
+                gridData: const FlGridData(show: false),
+                titlesData: const FlTitlesData(show: false),
+                borderData: FlBorderData(show: false),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: true,
+                    color: iconColor,
+                    barWidth: 2,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: false),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: iconColor.withOpacity(0.1),
+                    ),
+                  ),
+                ],
+                minY: 0,
+                lineTouchData: const LineTouchData(enabled: false),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChart() {
+    final entries = _dailyBorrowData.entries.toList();
+    
+    return Container(
+      height: 220,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: entries.isEmpty 
+              ? 10.0 
+              : (entries.map((e) => e.value).reduce((a, b) => a > b ? a : b) + 2).toDouble(),
+          barTouchData: BarTouchData(enabled: false),
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  if (entries.isEmpty) return const Text('');
+                  if (value.toInt() >= 0 && value.toInt() < entries.length) {
+                    final date = DateTime.parse(entries[value.toInt()].key);
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        DateFormat('E').format(date),
+                        style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      ),
+                    );
+                  }
+                  return const Text('');
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 30,
+                getTitlesWidget: (value, meta) {
+                  return Text(
+                    value.toInt().toString(),
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  );
+                },
+              ),
+            ),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: 1,
+            getDrawingHorizontalLine: (value) {
+              return FlLine(
+                color: Colors.grey.shade200,
+                strokeWidth: 1,
+              );
+            },
+          ),
+          borderData: FlBorderData(show: false),
+          barGroups: entries.asMap().entries.map((entry) {
+            return BarChartGroupData(
+              x: entry.key,
+              barRods: [
+                BarChartRodData(
+                  toY: entry.value.value.toDouble(),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF4F46E5), Color(0xFF6366F1)], // Indigo
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                    ),
+                  width: 16,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                ),
+              ],
+            );
+          }).toList(),
+        ),
       ),
     );
   }
@@ -225,7 +589,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
     return BottomNavigationBar(
       currentIndex: _currentIndex,
       type: BottomNavigationBarType.fixed,
-      selectedItemColor: const Color(0xFF1E4ED8),
+      selectedItemColor: const Color(0xFF4F46E5),
       onTap: (i) => setState(() => _currentIndex = i),
       items: const [
         BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Home'),
@@ -236,146 +600,143 @@ class _AdminHomePageState extends State<AdminHomePage> {
     );
   }
 
-  Widget _buildSummaryStats() {
+  Widget _buildSectionTitle(String title, IconData icon) {
     return Row(
       children: [
-        Expanded(
-          child: InkWell(
-            onTap: () {
-               Navigator.push(context, MaterialPageRoute(builder: (_) => const DetailBarangDipinjamPage()));
-            },
-            child: _statCard('Dipinjam', '$_jmlDipinjam', Icons.outbox, Colors.orange.shade100, Colors.orange),
-          ),
-        ),
-        const SizedBox(width: 15),
-        Expanded(
-          child: _statCard('Stok Alat', '$_jmlTersedia', Icons.inventory_2, Colors.blue.shade100, Colors.blue),
-        ),
+        Icon(icon, size: 20, color: const Color(0xFF4F46E5)),
+        const SizedBox(width: 8),
+        Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
       ],
     );
   }
 
-  Widget _statCard(String label, String val, IconData icon, Color bg, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)]),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 30),
-          const SizedBox(height: 10),
-          Text(val, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          Text(label, style: const TextStyle(color: Colors.grey)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(String title, IconData icon) {
-    return Row(children: [Icon(icon, size: 18), const SizedBox(width: 5), Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))]);
-  }
-
-  Widget _buildTransactionCard({required List<RiwayatItem> data, required bool isBorrowing}) {
-    return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
-      child: ListView.separated(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: data.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (ctx, i) {
-          final item = data[i];
-          return ListTile(
-            leading: CircleAvatar(
-              backgroundColor: item.statusColor.withOpacity(0.1),
-              child: Icon(isBorrowing ? Icons.access_time : Icons.check, color: item.statusColor, size: 20),
-            ),
-            title: Text(item.nama, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text("${item.barang} • ${item.waktu}"),
-            trailing: Text(item.status, style: TextStyle(color: item.statusColor, fontSize: 12)),
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ==========================================
-// HALAMAN DETAIL BARANG DIPINJAM
-// ==========================================
-class DetailBarangDipinjamPage extends StatelessWidget {
-  const DetailBarangDipinjamPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final supabase = Supabase.instance.client;
-
-    return Scaffold(
-      appBar: AppBar(title: const Text("Detail Peminjaman Aktif"), backgroundColor: const Color(0xFF1E4ED8)),
-      body: FutureBuilder(
-        // Query yang sama: join ke alat dan users (public)
-        future: supabase
-            .from('peminjaman')
-            .select('*, alat:alat_id(nama, gambar), users:user_id(email)')
-            .eq('status', 'disetujui')
-            .order('created_at', ascending: false),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          
-          if (!snapshot.hasData || (snapshot.data as List).isEmpty) {
-            return const Center(child: Text("Tidak ada data."));
-          }
-
-          final List data = snapshot.data as List;
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: data.length,
-            itemBuilder: (context, index) {
-              final item = data[index];
-              final alat = item['alat'] ?? {};
-              final user = item['users'] ?? {};
-              final tglPinjam = DateTime.parse(item['created_at']).toLocal();
-
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.all(12),
-                  leading: Container(
-                    width: 60, height: 60,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(8),
-                      image: (alat['gambar'] != null && alat['gambar'].toString().isNotEmpty)
-                          ? DecorationImage(image: NetworkImage(alat['gambar']), fit: BoxFit.cover)
-                          : null
+  Widget _buildModernActivityCards() {
+    return Column(
+      children: _listRiwayat.asMap().entries.map((entry) {
+        final item = entry.value;
+        final isLast = entry.key == _listRiwayat.length - 1;
+        
+        return Container(
+          margin: EdgeInsets.only(bottom: isLast ? 0 : 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              // Profile Avatar with Initials
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: _getGradientForName(item.nama),
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Text(
+                    _getInitials(item.nama),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
                     ),
-                    child: (alat['gambar'] == null || alat['gambar'] == '') 
-                        ? const Icon(Icons.image_not_supported, color: Colors.grey) : null,
-                  ),
-                  title: Text(alat['nama'] ?? 'Unknown Alat', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 4),
-                      Text("Peminjam: ${user['email'] ?? 'No Email'}", style: const TextStyle(fontSize: 12)),
-                      Text("Tanggal: ${DateFormat('dd MMM yyyy, HH:mm').format(tglPinjam)}", style: const TextStyle(fontSize: 12)),
-                    ],
-                  ),
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: Colors.orange.shade100, borderRadius: BorderRadius.circular(8)),
-                    child: const Text("Dipinjam", style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
                   ),
                 ),
-              );
-            },
-          );
-        },
-      ),
+              ),
+              const SizedBox(width: 14),
+              
+              // Content
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.nama,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.barang,
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 13,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(Icons.access_time, size: 12, color: Colors.grey.shade400),
+                        const SizedBox(width: 4),
+                        Text(
+                          item.waktu,
+                          style: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Status Badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: item.statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+              ),
+                child: Text(
+                  item.status,
+                  style: TextStyle(
+                    color: item.statusColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
+  }
+  
+  // Get initials from name
+  String _getInitials(String name) {
+    final parts = name.trim().split(' ');
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  
+  // Get gradient colors based on name hash (reduced to 4 colors)
+  List<Color> _getGradientForName(String name) {
+    // Monochrome gradients based on Indigo
+    final gradients = [
+      [const Color(0xFF4F46E5), const Color(0xFF6366F1)], 
+      [const Color(0xFF4338CA), const Color(0xFF4F46E5)],
+    ];
+    final index = name.hashCode.abs() % gradients.length;
+    return gradients[index];
   }
 }
 

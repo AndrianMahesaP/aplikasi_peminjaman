@@ -38,7 +38,7 @@ void initState() {
   super.initState();
 
   // 🔥 ambil kategori dari parent
-  jenisList = List.from(widget.kategoriList);
+  jenisList = List.from(widget.kategoriList)..removeWhere((element) => element == 'Semua');
 
   if (widget.alat != null) {
     namaController.text = widget.alat['nama'] ?? '';
@@ -122,18 +122,13 @@ void initState() {
     }
   }
 
-  void ubahStok(int delta) {
-    int current = int.tryParse(stokController.text) ?? 0;
-    int newVal = current + delta;
-    if (newVal < 0) newVal = 0;
-    setState(() => stokController.text = newVal.toString());
-  }
+
 
   // ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF3F4F6), // Soft Grey
       appBar: AppBar(
         title: Text(
           widget.alat == null ? 'Tambah Alat Baru' : 'Edit Alat',
@@ -142,6 +137,7 @@ void initState() {
         ),
         backgroundColor: Colors.white,
         elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black87),
       ),
 
       bottomNavigationBar: Padding(
@@ -149,7 +145,7 @@ void initState() {
         child: ElevatedButton(
           onPressed: loading ? null : simpan,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF1E4ED8),
+            backgroundColor: const Color(0xFF4F46E5), // Indigo
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -163,102 +159,132 @@ void initState() {
                 )
               : const Text(
                   'SIMPAN DATA',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
         ),
       ),
 
       body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            /// ====== FIX GAMBAR (AMAN ERROR) ======
-            GestureDetector(
-              onTap: pilihGambar,
-              child: Container(
-                height: 220,
-                width: double.infinity,
-                color: Colors.grey.shade100,
-                child: Builder(
-                  builder: (_) {
-                    if (imageBytes != null) {
-                      return Image.memory(
-                        imageBytes!,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                      );
-                    }
-
-                    if (imageUrl != null && imageUrl!.isNotEmpty) {
-                      return Image.network(
-                        imageUrl!,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        errorBuilder: (_, __, ___) =>
-                            const Center(child: Text('Gagal memuat gambar')),
-                      );
-                    }
-
-                    return Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add_photo_alternate_rounded,
-                            size: 40, color: Colors.grey.shade400),
-                        const SizedBox(height: 8),
-                        Text('Ketuk untuk upload gambar',
-                            style:
-                                TextStyle(color: Colors.grey.shade500)),
-                      ],
-                    );
-                  },
-                ),
+            // Card Container for Form
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-            ),
-
-            Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Informasi Utama',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 20),
+                   /// ====== FIX GAMBAR (AMAN ERROR) ======
+                  GestureDetector(
+                    onTap: pilihGambar,
+                    child: Container(
+                      height: 200,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Builder(
+                          builder: (_) {
+                            if (imageBytes != null) {
+                              return Image.memory(
+                                imageBytes!,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                              );
+                            }
 
-                  _buildLabel('Nama Alat'),
-                  _buildTextField(
-                      controller: namaController,
-                      hint: 'Contoh: Bola Voli'),
+                            if (imageUrl != null && imageUrl!.isNotEmpty) {
+                              return Image.network(
+                                imageUrl!,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                errorBuilder: (_, __, ___) =>
+                                    const Center(child: Text('Gagal memuat gambar')),
+                              );
+                            }
 
-                  const SizedBox(height: 20),
-
-                  _buildLabel('Kategori'),
-                  _buildDropdown(),
-
-                  const SizedBox(height: 20),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildLabel('Denda / Jam'),
-                            _buildTextField(
-                              controller: dendaController,
-                              hint: '0',
-                              isNumber: true,
-                            ),
-                          ],
+                            return Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.add_photo_alternate_rounded,
+                                    size: 40, color: Colors.indigo.shade200),
+                                const SizedBox(height: 8),
+                                Text('Ketuk untuk upload gambar',
+                                    style:
+                                        TextStyle(color: Colors.grey.shade500)),
+                              ],
+                            );
+                          },
                         ),
                       ),
-                      const SizedBox(width: 20),
-                      Expanded(
-                        child: Column(
-                          children: [
-                            _buildLabel('Stok'),
-                            _buildStokCounter(),
-                          ],
-                        ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Informasi Utama',
+                          style:
+                              TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 20),
+
+                      _buildLabel('Nama Alat'),
+                      _buildTextField(
+                          controller: namaController,
+                          hint: 'Contoh: Bola Voli'),
+
+                      const SizedBox(height: 20),
+
+                      _buildLabel('Kategori'),
+                      _buildDropdown(),
+
+                      const SizedBox(height: 20),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildLabel('Denda / Hari'),
+                                _buildTextField(
+                                  controller: dendaController,
+                                  hint: '0',
+                                  isNumber: true,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 20),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                _buildLabel('Stok'),
+                                _buildTextField(
+                                  controller: stokController,
+                                  hint: '0',
+                                  isNumber: true,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -331,30 +357,4 @@ void initState() {
     ),
   );
 }
-
-
-  Widget _buildStokCounter() {
-    return Container(
-      height: 55,
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          IconButton(
-              onPressed: () => ubahStok(-1),
-              icon: const Icon(Icons.remove)),
-          Text(stokController.text,
-              style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.bold)),
-          IconButton(
-              onPressed: () => ubahStok(1),
-              icon: const Icon(Icons.add)),
-        ],
-      ),
-    );
-  }
 }

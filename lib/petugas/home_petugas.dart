@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'peminjaman_petugas.dart';
-import 'alat_petugas.dart';
+import 'pengembalian_petugas.dart';
+import 'riwayat_petugas.dart';
 import 'setting.dart';
 
 class HomePetugasPage extends StatefulWidget {
@@ -23,39 +24,37 @@ class _HomePetugasPageState extends State<HomePetugasPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-
-      // ===== BODY (SAMA DENGAN ADMIN) =====
+      backgroundColor: const Color(0xFFF3F4F6), // Soft Grey
       body: IndexedStack(
         index: _currentIndex,
         children: [
           _homeContent(),
-          const PetugasAlatPage(),
+          const PengembalianPetugasPage(), // Updated from PeminjamanPetugasPage
           const PetugasPengaturanPage(),
         ],
       ),
-
-      // ===== BOTTOM NAVBAR (STYLE ADMIN) =====
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _currentIndex,
-        selectedItemColor: Colors.black,
+        selectedItemColor: const Color(0xFF4F46E5), // Indigo
         unselectedItemColor: Colors.grey,
+        backgroundColor: Colors.white,
+        elevation: 10,
         onTap: (index) {
           setState(() => _currentIndex = index);
         },
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            label: '',
+            icon: Icon(Icons.home_filled),
+            label: 'Home',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.assignment_outlined),
-            label: '',
+            icon: Icon(Icons.assignment_return), // Changed Icon
+            label: 'Pengembalian', // Changed Label
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined),
-            label: '',
+            icon: Icon(Icons.settings),
+            label: 'Pengaturan',
           ),
         ],
       ),
@@ -64,88 +63,150 @@ class _HomePetugasPageState extends State<HomePetugasPage> {
 
   // ================= HOME CONTENT =================
   Widget _homeContent() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Home Petugas',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // ===== PROFIL =====
-            Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 3,
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: primaryColor,
-                  child: const Icon(Icons.person, color: Colors.white),
-                ),
-                title: Text(
-                  widget.petugas['nama'],
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(widget.petugas['role']),
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            const Text(
-              'Menu Petugas',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // ===== MENU GRID =====
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              physics: const NeverScrollableScrollPhysics(),
+    return Column(
+      children: [
+        _buildModernHeader(),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _menuItem(
-                  icon: Icons.assignment_outlined,
-                  title: 'Peminjaman',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const PeminjamanPetugasPage(),
-                      ),
-                    );
-                  },
+                const Text(
+                  'Menu Utama',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
                 ),
-                _menuItem(
-                  icon: Icons.history_outlined,
-                  title: 'Riwayat',
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Fitur riwayat belum tersedia'),
-                      ),
-                    );
-                  },
+                const SizedBox(height: 16),
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: 1.1,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _menuItem(
+                      icon: Icons.assignment_outlined,
+                      title: 'Kelola Peminjaman',
+                      subtitle: 'ACC / Tolak',
+                      color: const Color(0xFF4F46E5),
+                      // Navigate to PeminjamanPetugasPage (Request Masuk)
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const PeminjamanPetugasPage()),
+                        );
+                      },
+                    ),
+                    _menuItem(
+                      icon: Icons.history,
+                      title: 'Riwayat Transaksi',
+                      subtitle: 'Log Peminjaman',
+                      color: Colors.orange,
+                      // Navigate to RiwayatPetugasPage
+                      onTap: () {
+                         Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const RiwayatPetugasPage()),
+                        );
+                      },
+                    ),
+                    // Add more menu items if needed
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildModernHeader() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 60, 24, 30),
+      decoration: const BoxDecoration(
+        color: Color(0xFF4F46E5), // Indigo
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(30),
+          bottomRight: Radius.circular(30),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x334F46E5), // Indigo shadow
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              shape: BoxShape.circle,
+            ),
+            child: CircleAvatar(
+              radius: 28,
+              backgroundColor: Colors.white,
+              child: Text(
+                widget.petugas['nama'][0].toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF4F46E5),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Selamat Datang,',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  widget.petugas['nama'],
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    widget.petugas['role'],
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -153,27 +214,58 @@ class _HomePetugasPageState extends State<HomePetugasPage> {
   Widget _menuItem({
     required IconData icon,
     required String title,
+    required String subtitle,
+    required Color color,
     required VoidCallback onTap,
   }) {
     return InkWell(
-      borderRadius: BorderRadius.circular(16),
       onTap: onTap,
-      child: Card(
-        elevation: 3,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Icon(icon, size: 42, color: primaryColor),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: primaryColor,
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
               ),
+              child: Icon(icon, color: color, size: 28),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: Colors.grey.shade500,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
